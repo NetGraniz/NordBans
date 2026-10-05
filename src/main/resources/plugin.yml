@@ -1,5 +1,5 @@
 name: NordBans
-version: '1.1.0'
+version: '${project.version}'
 main: com.nordfjell.nordbans.NordBansPlugin
 api-version: '26.2'
 author: Nord Fjell

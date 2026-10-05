@@ -1,5 +1,8 @@
 # NordBans 1.1.0
 
+> Release build and installation requirements: see [BUILDING.md](BUILDING.md).
+> Older local paths below describe historical test fixtures, not the release build.
+
 Minimal Paper temporary bans for Nord Fjell.
 
 - `/tempban <player> <time> <reason>` with `m`, `h`, or `d`
