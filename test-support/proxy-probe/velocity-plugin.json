@@ -1,0 +1,1 @@
+{"id":"banbridgeprobe","name":"LOCAL ONLY Ban bridge probe","version":"1","main":"com.nordfjell.nordbansprobe.BanBridgeProbe","dependencies":[{"id":"nordqueue","optional":false}]}

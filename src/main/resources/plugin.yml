@@ -1,0 +1,24 @@
+name: NordBans
+version: '1.1.0'
+main: com.nordfjell.nordbans.NordBansPlugin
+api-version: '26.2'
+author: Nord Fjell
+description: Minimal temporary bans for Nord Fjell.
+
+commands:
+  tempban:
+    description: Temporarily ban an account.
+    usage: /tempban <player> <time> <reason>
+    permission: nordbans.tempban
+  unban:
+    description: Remove a temporary ban.
+    usage: /unban <player>
+    permission: nordbans.unban
+
+permissions:
+  nordbans.tempban:
+    description: Allows temporary bans.
+    default: false
+  nordbans.unban:
+    description: Allows removing temporary bans.
+    default: false

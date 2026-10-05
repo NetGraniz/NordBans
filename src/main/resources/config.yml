@@ -1,0 +1,21 @@
+maximum-duration-days: 365
+
+storage:
+  maximum-pending-operations: 128
+  maximum-queue-wait-millis: 10000
+sync:
+  messages-per-tick: 10
+
+messages:
+  tempban-usage: '<red>Usage: /tempban \<player> \<time> \<reason></red>'
+  unban-usage: '<red>Usage: /unban \<player></red>'
+  invalid-player: '<red>Invalid player name.</red>'
+  invalid-duration: '<red>Invalid duration. Use minutes (30m), hours (5h), or days (1d).</red>'
+  duration-too-long: '<red>The maximum temporary ban duration is <days> days.</red>'
+  reason-too-long: '<red>The reason must contain no more than 256 characters.</red>'
+  banned: '<green><player> was temporarily banned for <duration>.</green>'
+  unbanned: '<green>The temporary ban for <player> was removed.</green>'
+  not-banned: '<red><player> does not have an active temporary ban.</red>'
+  storage-error: '<red>Could not update the ban database.</red>'
+  storage-busy: '<red>Ban storage is busy; please retry.</red>'
+  storage-pending: '<yellow>Ban update queued; wait for confirmation.</yellow>'
