@@ -14,16 +14,22 @@ import java.io.*;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 
 public final class NordBansPlugin extends JavaPlugin implements Listener, TabExecutor {
     private final MiniMessage mini = MiniMessage.miniMessage();
     private final SyncPlanner sync = new SyncPlanner();
-    private final Map<Player,Long> carrierReadyAt = new IdentityHashMap<>();
+    private record Carrier(Player player, String name, long readyAt) {}
+    private final Map<UUID,Carrier> carriers = new ConcurrentHashMap<>();
+    private final AtomicBoolean syncRunning = new AtomicBoolean();
+    private Map<String,String> messages = Map.of();
     private BanStore store;
     private BoundedTasks worker;
     private volatile boolean ready;
-    private boolean closing, cleanupPending;
+    private volatile boolean closing;
+    private boolean cleanupPending;
     private long maximumDurationMillis;
     private int syncPerTick;
 
@@ -32,6 +38,12 @@ public final class NordBansPlugin extends JavaPlugin implements Listener, TabExe
             // Register the gate before initialization; failed initialization must not just remove bans.
             getServer().getPluginManager().registerEvents(this,this);
             saveDefaultConfig();
+            Map<String,String> templates = new HashMap<>();
+            var section = getConfig().getConfigurationSection("messages");
+            if (section != null) section.getValues(true).forEach((key,value) -> {
+                if (value instanceof String text) templates.put("messages." + key,text);
+            });
+            messages = Map.copyOf(templates);
             maximumDurationMillis = Duration.ofDays(Math.clamp(getConfig().getLong("maximum-duration-days",365),1,3650)).toMillis();
             int pending = getConfig().getInt("storage.maximum-pending-operations",128);
             long wait = getConfig().getLong("storage.maximum-queue-wait-millis",10000);
@@ -43,14 +55,14 @@ public final class NordBansPlugin extends JavaPlugin implements Listener, TabExe
             worker = new BoundedTasks(pending,wait);
             register("tempban"); register("unban");
             getServer().getMessenger().registerOutgoingPluginChannel(this,BanProtocol.CHANNEL);
-            Bukkit.getScheduler().runTaskTimer(this,this::tick,20,1);
-            Bukkit.getScheduler().runTaskTimer(this,this::cleanupExpired,1200,1200);
+            Bukkit.getGlobalRegionScheduler().runAtFixedRate(this,ignored -> tick(),20,1);
+            Bukkit.getGlobalRegionScheduler().runAtFixedRate(this,ignored -> cleanupExpired(),1200,1200);
             ready = true;
-            getLogger().info("NordBans 1.1.0 enabled with " + store.activeRecords().size() + " active temporary bans.");
+            getLogger().info("NordBans " + getPluginMeta().getVersion() + " enabled with " + store.activeRecords().size() + " active temporary bans.");
         } catch (Exception exception) {
             ready=false;
             getLogger().severe("Ban initialization failed (" + exception.getClass().getSimpleName()
-                + "); refusing logins and requesting safe Paper shutdown. Check configuration/storage.");
+                + "); refusing logins and requesting safe server shutdown. Check configuration/storage.");
             getServer().shutdown();
         }
     }
@@ -58,7 +70,7 @@ public final class NordBansPlugin extends JavaPlugin implements Listener, TabExe
         ready=false; closing=true;
         if (worker != null) worker.close();
         sync.unavailable();
-        carrierReadyAt.clear();
+        carriers.clear();
         if (!getServer().isStopping()) {
             getLogger().severe("NordBans disabled on a running server; requesting safe shutdown rather than bypassing bans.");
             getServer().shutdown();
@@ -79,19 +91,34 @@ public final class NordBansPlugin extends JavaPlugin implements Listener, TabExe
         store.active(event.getPlayer().getName()).ifPresent(record -> kick(event.getPlayer(),record));
         // Paper's JoinEvent precedes completion of Velocity's backend switch. Messages sent
         // immediately can be dropped before the proxy installs its ServerConnection handler.
-        carrierReadyAt.put(event.getPlayer(),System.nanoTime()+1_000_000_000L);
+        Player player = event.getPlayer();
+        carriers.put(player.getUniqueId(),new Carrier(player,player.getName(),System.nanoTime()+1_000_000_000L));
         // No per-join full synchronization; the single tick task handles carrier recovery.
     }
-    @EventHandler public void quit(PlayerQuitEvent event) { carrierReadyAt.remove(event.getPlayer()); }
+    @EventHandler public void quit(PlayerQuitEvent event) {
+        Player player = event.getPlayer();
+        carriers.computeIfPresent(player.getUniqueId(),(id,carrier) -> carrier.player() == player ? null : carrier);
+    }
     private void tick() {
         if (!ready || closing) return;
         try { worker.drain(32); }
         catch (RuntimeException exception) { getLogger().severe("Ban completion failed: " + exception.getClass().getSimpleName()); }
         long now=System.nanoTime();
-        carrierReadyAt.keySet().removeIf(player -> !player.isOnline() || Bukkit.getPlayer(player.getUniqueId()) != player);
-        Player carrier=carrierReadyAt.entrySet().stream().filter(entry -> now-entry.getValue() >= 0)
-            .map(Map.Entry::getKey).findFirst().orElse(null);
-        sync.tick(carrier != null,store::syncRecords,store::syncFor,message -> transmit(carrier,message),syncPerTick);
+        // At most one outstanding entity task: a slow/retiring region cannot grow a queue.
+        if (!syncRunning.compareAndSet(false,true)) return;
+        Carrier carrier=carriers.values().stream().filter(entry -> now-entry.readyAt() >= 0 && store.active(entry.name()).isEmpty())
+            .findFirst().orElse(null);
+        if (carrier == null) { sync.unavailable(); syncRunning.set(false); return; }
+        Runnable retired = () -> { carriers.values().remove(carrier); sync.unavailable(); syncRunning.set(false); };
+        try {
+            if (!carrier.player().getScheduler().execute(this,() -> {
+                try {
+                    if (!ready || closing) return;
+                    sync.tick(carrier.player().isOnline() && store.active(carrier.name()).isEmpty(),store::syncRecords,store::syncFor,
+                        message -> transmit(carrier.player(),message),syncPerTick);
+                } finally { syncRunning.set(false); }
+            },retired,1L)) retired.run();
+        } catch (org.bukkit.plugin.IllegalPluginAccessException ignored) { retired.run(); }
     }
     private void cleanupExpired() {
         if (!ready || closing || cleanupPending) return;
@@ -130,8 +157,11 @@ public final class NordBansPlugin extends JavaPlugin implements Listener, TabExe
             store.syncFor(name).ifPresent(sync::changed);
             // Result is account-based, but must not kick after a later UNBAN or replacement ban.
             if (store.active(name).filter(record::equals).isPresent()) {
-                Bukkit.getOnlinePlayers().stream().filter(player -> player.getName().equalsIgnoreCase(name))
-                    .findFirst().ifPresent(player -> kick(player,record));
+                carriers.values().stream().filter(carrier -> carrier.name().equalsIgnoreCase(name))
+                    .findFirst().ifPresent(carrier -> onOwner(carrier.player(),() -> {
+                        if (carrier.player().isOnline() && store.active(name).filter(record::equals).isPresent())
+                            kick(carrier.player(),record);
+                    }));
             }
             getLogger().info(record.actor() + " temporarily banned " + name + " for " + durationText + ": " + reason);
             reply(sender,"messages.banned","<player>",name,"<duration>",durationText);
@@ -177,7 +207,7 @@ public final class NordBansPlugin extends JavaPlugin implements Listener, TabExe
         if (!ready || args.length != 1 || !sender.hasPermission("nordbans."+command.getName().toLowerCase(Locale.ROOT))) return List.of();
         String prefix=args[0].toLowerCase(Locale.ROOT);
         Collection<String> names=command.getName().equalsIgnoreCase("unban") ? store.activeNames()
-            : Bukkit.getOnlinePlayers().stream().map(Player::getName).toList();
+            : carriers.values().stream().map(Carrier::name).toList();
         return names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).limit(50).toList();
     }
     private void register(String name) {
@@ -186,8 +216,20 @@ public final class NordBansPlugin extends JavaPlugin implements Listener, TabExe
     }
     private void reply(CommandSender sender,String path,String... replacements) {
         // Feedback to an old disconnected actor must not reach their replacement session.
-        if (sender instanceof Player player && (!player.isOnline() || Bukkit.getPlayer(player.getUniqueId()) != player)) return;
-        send(sender,path,replacements);
+        onOwner(sender,() -> {
+            if (sender instanceof Player player && !player.isOnline()) return;
+            send(sender,path,replacements);
+        });
+    }
+    private void onOwner(CommandSender sender,Runnable action) {
+        if (!ready || closing) return;
+        Runnable guarded = () -> { if (ready && !closing) action.run(); };
+        try {
+            if (sender instanceof Player player) player.getScheduler().execute(this,guarded,null,1L);
+            else Bukkit.getGlobalRegionScheduler().execute(this,guarded);
+        } catch (org.bukkit.plugin.IllegalPluginAccessException ignored) {
+            // Shutdown can disable the plugin between the check and scheduling.
+        }
     }
     private void send(CommandSender sender,String path,String... replacements) {
         String fallback=switch(path) {
@@ -195,7 +237,7 @@ public final class NordBansPlugin extends JavaPlugin implements Listener, TabExe
             case "messages.storage-pending" -> "<yellow>Ban update queued; wait for confirmation.</yellow>";
             default -> "<red>Ban storage update failed.</red>";
         };
-        String raw=getConfig().getString(path,fallback);
+        String raw=messages.getOrDefault(path,fallback);
         List<TagResolver> tags=new ArrayList<>();
         for (int i=0;i+1<replacements.length;i+=2) {
             String key=replacements[i]; tags.add(Placeholder.unparsed(key.substring(1,key.length()-1),replacements[i+1]));

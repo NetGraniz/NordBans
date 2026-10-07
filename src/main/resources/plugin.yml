@@ -2,6 +2,7 @@ name: NordBans
 version: '${project.version}'
 main: com.nordfjell.nordbans.NordBansPlugin
 api-version: '26.2'
+folia-supported: true
 author: Nord Fjell
 description: Minimal temporary bans for Nord Fjell.
 

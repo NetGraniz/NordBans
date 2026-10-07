@@ -22,11 +22,21 @@ public final class BanTestProbe extends JavaPlugin {
             store=field(bans,"store"); worker=field(bans,"worker");
             persister=store.getClass().getDeclaredField("persister"); persister.setAccessible(true); originalPersister=persister.get(store);
         } catch(Exception e){throw new IllegalStateException(e);}
-        Bukkit.getScheduler().runTaskTimer(this,()->ticks++,1,1);
+        Bukkit.getGlobalRegionScheduler().runAtFixedRate(this,ignored -> ticks++,1,1);
         getCommand("nbtest").setExecutor((sender,command,label,args)->{
             if(sender instanceof org.bukkit.entity.Player || args.length==0)return true;
             try {
                 switch(args[0]) {
+                    case "grant" -> {
+                        var player=Bukkit.getPlayerExact(args[1]);
+                        if(player==null)throw new IllegalStateException("Missing fixture player");
+                        player.getScheduler().execute(this,()->{
+                            var attachment=player.addAttachment(this);
+                            attachment.setPermission("nordbans.tempban",true);
+                            attachment.setPermission("nordbans.unban",true);
+                            getLogger().info("NBGRANT "+player.getName());
+                        },null,1L);
+                    }
                     case "state" -> {
                         Collection<?> active=(Collection<?>)call(store,"activeNames");
                         Object pending=call(worker,"pending");

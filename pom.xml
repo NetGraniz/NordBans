@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>dev.nordfjell</groupId>
   <artifactId>nordbans</artifactId>
-  <version>1.1.1</version>
+  <version>1.2.0</version>
   <name>NordBans</name>
   <properties>
     <maven.compiler.release>25</maven.compiler.release>

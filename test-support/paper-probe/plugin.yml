@@ -2,6 +2,7 @@ name: NordBansLocalTestProbe
 version: '1'
 main: com.nordfjell.nordbansprobe.BanTestProbe
 api-version: '26.2'
+folia-supported: true
 depend: [NordBans]
 commands:
   nbtest:
