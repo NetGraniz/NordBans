@@ -1,93 +1,73 @@
-# NordBans 1.2.0
+# NordBans
 
-> Release build and installation requirements: see [BUILDING.md](BUILDING.md).
+Temporary account bans for Paper 26.2 and Folia 26.2, with NordQueue synchronization. One Java 25 JAR supports both platforms.
 
-Temporary account bans for Paper 26.2 and Folia 26.2 / Java 25.
-One release JAR supports both platforms; development stays on `main`.
+## Commands
 
-- `/tempban <player> <time> <reason>` with `m`, `h`, or `d`
-- `/unban <player>`
-- Permission nodes: `nordbans.tempban` and `nordbans.unban`
-- Atomic local persistence in `plugins/NordBans/bans.properties`
-- Synchronizes suspended players to NordQueue over `nordfjell:bans`
-- A suspended player remains in limbo, outside both queues, until expiration or `/unban`
-- On release, NordQueue places the player at the end of the regular queue
+- `/tempban <player> <time> <reason>` bans an account. Time suffixes are `m`, `h` and `d`.
+- `/unban <player>` removes an account ban.
 
-Sources and release artifacts are maintained in GitHub. Keep existing configuration
-and ban files: their format and defaults are unchanged, no migration is required
-by this update. Stop and back up the server before replacing its JAR.
+## Permissions
 
-## Paper and Folia
+| Permission | Allows | Default |
+| --- | --- | --- |
+| `nordbans.tempban` | `/tempban` | Nobody, including operators |
+| `nordbans.unban` | `/unban` | Nobody, including operators |
 
-Storage completion draining and expiry maintenance use the global scheduler.
-Kicks, player command replies and plugin-message transmission use the owning
-entity scheduler. Carrier sessions are tracked concurrently; messages are immutable
-startup snapshots. Sync state is serialized without file I/O under its lock.
-Only one carrier task may be outstanding, preventing backlog on a slow region.
-Banned players cannot carry messages while their kick is pending.
+Grant each permission explicitly. A command-filter allowlist entry does not grant either permission.
 
-Changes:
+## Storage and queue integration
 
-- Ban/unban/expiry file writes run on one bounded worker, not the gameplay thread.
-  A queued message is not confirmation: wait for the final success/error reply.
-- A successful file commit precedes publication to immutable in-memory readers;
-  failed unban does not silently remove an enforced ban.
-- Corrupt records, duplicates and conflicting metadata reject the complete load.
-  Initialization failure or disabling this security plugin requests a safe server
-  shutdown. Hot reload and hot disable are unsupported.
-- Persistent `!unban.*` metadata records pending releases until the original ban
-  would expire. Do not delete it while the proxy may still hold that ban.
-- One carrier-recovery baseline, not a full resend on each join; default at most
-  ten messages per tick. A new carrier has a one-second warm-up for Velocity's
-  backend switch. Latest account state supersedes stale pending messages.
-- Command and tab-completion permission checks are explicit. Existing permission
-  nodes remain default-false; no ordinary player or operator gains new access.
-  The local test helper grants only its test console the two nodes; no production
-  permission is changed.
+Local bans use atomic persistence in `plugins/NordBans/bans.properties`. Plugin messages on `nordfjell:bans` synchronize NordQueue.
 
-Optional configuration (existing files receive embedded defaults without manual edits):
+Banned players remain in limbo outside both queues. After expiry or unban, they join the end of the regular queue.
+
+The file format and configuration defaults are unchanged. Stop the server, back up its installed configuration and ban files, and retain them when replacing the JAR.
+
+## Folia scheduling
+
+The global scheduler drains completed operations and handles expiry. Player kicks, replies and messages use the player's entity scheduler.
+
+Session tracking is concurrent and message templates are immutable after startup. Synchronization is serialized without file I/O under its state lock. Each carrier has at most one outstanding send; a carrier awaiting a ban kick does not send messages.
+
+## Persistence and failure handling
+
+One bounded storage worker processes operations. A queued reply does not mean a change has committed; the final reply reports the outcome.
+
+Successful persistence precedes publication of immutable state. A failed unban stays enforced. Corrupt records, duplicates or invalid metadata reject the entire initial load. Initialization failure or a hot disable requests server shutdown.
+
+Records named `!unban.*` hold pending releases until the old ban expires. Do not delete them while a proxy may still hold the ban.
+
+Recovery sends a baseline through one carrier rather than resending the full store on every join. Carriers warm up for 1 second. The default send budget is 10 messages per tick; a newer state replaces an older pending state for the same account.
+
+## Configuration
 
 ```yaml
 storage:
-  maximum-pending-operations: 128       # 1..4096; includes results awaiting delivery
-  maximum-queue-wait-millis: 10000      # 1..300000; not a running-I/O deadline
+  maximum-pending-operations: 128
+  maximum-queue-wait-millis: 10000
 sync:
-  messages-per-tick: 10                # 1..100
+  messages-per-tick: 10
 ```
 
-Build from the working Git clone with Maven and JDK 25:
+`maximum-pending-operations` accepts 1..4096 and includes pending results. `maximum-queue-wait-millis` accepts 1..300000; it limits waiting work, not the duration of running I/O. `messages-per-tick` accepts 1..100.
 
-```powershell
-./build.ps1
-```
+V1 BAN/UNBAN messages have no acknowledgments or cryptographic signature. Receiver persistence and confirmed end-to-end delivery are separate concerns.
 
-Build runs CoreTest, 31 regression scenarios and concurrent delivery of 2000
-synthetic updates. This is not a 1000-player server load test.
-The V1 wire protocol remains BAN/UNBAN-compatible but
-has no acknowledgement or cryptographic signature; receiver-side persistence and
-delivery confirmation remain separate work. Never deploy `test-support` probes.
+## Build and tests
 
-## Isolated backend tests
+Run `./build.ps1` with Maven 3.9+ and JDK 25. The output is `target/NordBans-1.2.0.jar`. See [BUILDING.md](BUILDING.md).
 
-`test-support/backend-integration.cjs` exercises the same JAR on separate local
-Paper/Folia fixtures: legacy bans, V1 wire frames, permission rejection, console
-and player commands, kicks, pre-login denial, failed writes, queue overload,
-restart recovery, expiry and fail-closed shutdown.
+Checks include `CoreTest`, 31 regression scenarios and 2000 synthetic updates. These do not establish capacity for 1000 connected players.
 
-Build the test-only probe with `test-support/build-backend-probe.ps1`; set
-`JAVA_HOME` to JDK 25 and pass `-MavenCommand` if Maven is not on PATH.
-Set `NODE_PATH` to installed NordLoadTest dependencies with 26.2 metadata prepared.
-Pass a fresh local fixture path, Java executable, a same-day NordAuth fixture
-supplying only server binaries/cache and accepted EULA, and `Paper` or `Folia`.
-The harness never copies accounts, configurations or worlds.
+`test-support/backend-integration.cjs` covers both platforms: legacy bans, V1 frames, permissions, console and player commands, kicks, pre-login enforcement, failed writes, overload, restart, expiry and shutdown.
+
+Build the fixture-only helper with `test-support/build-backend-probe.ps1`, `JAVA_HOME` set to JDK 25 and a suitable `MavenCommand`. Set `NODE_PATH` to the prepared NordLoadTest 26.2 client dependencies.
 
 ```powershell
 node ./test-support/backend-integration.cjs $FreshFixture $JavaExecutable $BinarySeed Folia
 ```
 
-It binds only `127.0.0.1:25636`, uses offline-mode synthetic clients and writes
-results into that fixture. The probe grants only isolated test permissions.
-Never install test probes on production. These tests verify V1 packet transport,
-not the complete production Velocity/NordQueue deployment. The older
-`integration.cjs`/proxy probe describe a historical fixture; do not run their old
-paths or use historical sources for new builds.
+Use a fresh local fixture with binary/cache/EULA files only; the existing NordAuth fixture can supply those files, not its account data. The backend listens on `127.0.0.1:25636`, uses synthetic offline clients and stores results in the fixture.
+
+This is not a full production Velocity deployment test. Older `integration.cjs` and proxy-probe fixtures are historical; do not reuse their old source paths or install any probe on production.
