@@ -10,7 +10,7 @@ public final class RegressionTest {
     static int passed;
     static void check(boolean ok,String message) { if(!ok) throw new AssertionError(message); }
     static void pass(String message) { passed++; System.out.println("PASS "+message); }
-    static BanRecord ban(String name) { return new BanRecord(name,System.currentTimeMillis()+600000,"Spam | тест","Console"); }
+    static BanRecord ban(String name) { return new BanRecord(name,System.currentTimeMillis()+600000,"Spam | test","Console"); }
     static void write(Path file,Properties p) throws IOException { try(var out=Files.newOutputStream(file)){p.store(out,"LOCAL TEST");} }
     static void failsIO(IoAction action) throws Exception { try {action.run(); throw new AssertionError("Expected IOException");} catch(IOException expected){} }
     @FunctionalInterface interface IoAction {void run() throws Exception;}
