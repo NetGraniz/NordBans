@@ -58,9 +58,7 @@ public final class NordBansPlugin extends JavaPlugin implements Listener,TabExec
         if(section==null)throw new IllegalArgumentException("Missing messages section");section.getValues(true).forEach((key,value)->{if(value instanceof String text)templates.put("messages."+key,text);});
         long days=yaml.getLong("maximum-duration-days",365);int pending=yaml.getInt("storage.maximum-pending-operations",128);long wait=yaml.getLong("storage.maximum-queue-wait-millis",10000);
         if(days<1||days>3650||pending<1||pending>4096||wait<1||wait>300000)throw new IllegalArgumentException("Invalid NordBans settings");
-        for(String required:List.of("tempban-usage","unban-usage","invalid-player","invalid-duration","duration-too-long","reason-too-long","banned","unbanned","not-banned","storage-error","storage-busy","storage-pending","reload-success","reload-failed")){
-            String value=templates.get("messages."+required);if(value==null||value.isBlank())throw new IllegalArgumentException("Missing message: "+required);mini.deserialize(value);
-        }
+        for(String value:templates.values()){if(value.isBlank())throw new IllegalArgumentException("Blank NordBans message");mini.deserialize(value);}
         return new RuntimeSettings(Map.copyOf(templates),Duration.ofDays(days).toMillis(),pending,wait);
     }
     private void apply(RuntimeSettings settings){messages=settings.messages();maximumDurationMillis=settings.maximumDurationMillis();}
