@@ -3,8 +3,6 @@ maximum-duration-days: 365
 storage:
   maximum-pending-operations: 128
   maximum-queue-wait-millis: 10000
-sync:
-  messages-per-tick: 10
 
 messages:
   tempban-usage: '<red>Usage: /tempban \<player> \<time> \<reason></red>'
@@ -19,3 +17,5 @@ messages:
   storage-error: '<red>Could not update the ban database.</red>'
   storage-busy: '<red>Ban storage is busy; please retry.</red>'
   storage-pending: '<yellow>Ban update queued; wait for confirmation.</yellow>'
+  reload-success: '<green>NordBans configuration reloaded.</green>'
+  reload-failed: '<red>Reload rejected; previous settings retained.</red>'
