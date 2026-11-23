@@ -1,6 +1,6 @@
 # NordBans
 
-Temporary account bans for Paper/Folia 26.2. NordBans 1.3.0 stores bans in indexed SQLite instead of rewriting a properties file.
+Temporary account bans for Paper/Folia 26.2. NordBans 1.3.1 stores bans in indexed SQLite instead of rewriting a properties file.
 
 ## Storage
 
