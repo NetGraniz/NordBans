@@ -1,0 +1,34 @@
+name: NordBans
+version: '${project.version}'
+main: com.nordfjell.nordbans.NordBansPlugin
+api-version: '26.2'
+folia-supported: true
+author: Nord Fjell
+description: Minimal temporary bans for Nord Fjell.
+libraries:
+  - org.xerial:sqlite-jdbc:3.49.1.0
+
+commands:
+  tempban:
+    description: Temporarily ban an account.
+    usage: /tempban <player> <time> <reason>
+    permission: nordbans.tempban
+  unban:
+    description: Remove a temporary ban.
+    usage: /unban <player>
+    permission: nordbans.unban
+  nordbans:
+    description: Reload NordBans configuration.
+    usage: /nordbans reload
+    permission: nordbans.admin
+
+permissions:
+  nordbans.tempban:
+    description: Allows temporary bans.
+    default: false
+  nordbans.unban:
+    description: Allows removing temporary bans.
+    default: false
+  nordbans.admin:
+    description: Allows safe NordBans configuration reloads.
+    default: op
