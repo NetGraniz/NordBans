@@ -1,14 +1,12 @@
 # NordBans
 
-Temporary account bans for Paper/Folia 26.2. NordBans 1.3.1 stores bans in indexed SQLite instead of rewriting a properties file.
+Independent temporary account bans for Paper/Folia. NordBans 2.0.0 uses indexed SQLite storage as its only persistence layer.
 
 ## Storage
 
 - Runtime database: `plugins/NordBans/bans.db`
-- Legacy import source: `plugins/NordBans/bans.properties`
-- The legacy file is imported once and left untouched.
 - Expired records are removed periodically.
-- NordBans no longer sends plugin messages to the proxy. NordQueue reads `bans.db` directly through its configured read-only connection.
+- The database schema is owned by NordBans and is validated before use.
 
 ## Commands
 
