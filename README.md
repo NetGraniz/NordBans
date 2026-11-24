@@ -28,3 +28,7 @@ Supported durations are minutes (`m`), hours (`h`), and days (`d`).
 - Folia scheduling uses global, entity, or asynchronous ownership as appropriate; database I/O never runs on an entity region
 
 See [BUILDING.md](BUILDING.md) for the verified build command.
+
+## License
+
+Current development on `main` is licensed under [GNU GPL v3.0 only](LICENSE). The latest published release remains available under the MIT License stated on its release page.
