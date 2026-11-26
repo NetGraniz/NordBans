@@ -1,6 +1,7 @@
 maximum-duration-days: 365
 
 storage:
+  # These two worker limits are read at startup and require a normal server restart to change.
   maximum-pending-operations: 128
   maximum-queue-wait-millis: 10000
 

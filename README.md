@@ -1,6 +1,6 @@
 # NordBans
 
-Independent temporary account bans for Paper/Folia. NordBans 2.0.0 uses indexed SQLite storage as its only persistence layer.
+Independent temporary account bans for Paper/Folia. NordBans 2.0.1 uses indexed SQLite storage as its only persistence layer.
 
 ## Storage
 
@@ -18,7 +18,7 @@ Supported durations are minutes (`m`), hours (`h`), and days (`d`).
 
 ## Configuration
 
-`config.yml` contains user-facing messages. `/nordbans reload` validates and reloads the configuration without a server restart.
+`config.yml` contains user-facing messages. `/nordbans reload` validates and reloads messages and the maximum ban duration without a server restart. The bounded storage worker settings are validated during reload, but changing them requires a normal server restart; the command reports this explicitly and keeps the active worker intact.
 
 ## Platform
 

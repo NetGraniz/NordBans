@@ -7,7 +7,6 @@ import java.util.function.BiConsumer;
 /** Permits cover queued/running tasks AND completed results waiting for main-thread delivery. */
 final class BoundedTasks implements AutoCloseable {
     private final Semaphore permits;
-    private final int capacity;
     private final ThreadPoolExecutor executor;
     private final ConcurrentLinkedQueue<Job<?>> completed = new ConcurrentLinkedQueue<>();
     private final long maximumWaitNanos;
@@ -15,7 +14,6 @@ final class BoundedTasks implements AutoCloseable {
     BoundedTasks(int maximumPending, long maximumWaitMillis) {
         if (maximumPending < 1 || maximumWaitMillis < 1) throw new IllegalArgumentException();
         permits = new Semaphore(maximumPending);
-        capacity = maximumPending;
         maximumWaitNanos = TimeUnit.MILLISECONDS.toNanos(maximumWaitMillis);
         executor = new ThreadPoolExecutor(1,1,0,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(maximumPending),
             runnable -> { Thread thread = new Thread(runnable,"NordBans-storage"); thread.setDaemon(true); return thread; },
@@ -33,7 +31,6 @@ final class BoundedTasks implements AutoCloseable {
             try { if (!closed) job.deliver(); } finally { job.release(); }
         }
     }
-    int pending() { return capacity - permits.availablePermits(); }
     @Override public synchronized void close() {
         closed=true;
         for (Runnable job : executor.shutdownNow()) ((Job<?>)job).release();

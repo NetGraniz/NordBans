@@ -22,12 +22,13 @@ public final class NordBansPlugin extends JavaPlugin implements Listener,TabExec
     private final MiniMessage mini=MiniMessage.miniMessage();
     private volatile Map<String,String> messages=Map.of();private BanStore store;private BoundedTasks worker;
     private volatile boolean ready,closing,reloadPending;private boolean cleanupPending;private volatile long maximumDurationMillis;
+    private int storageMaximumPending;private long storageMaximumWaitMillis;
     private record RuntimeSettings(Map<String,String> messages,long maximumDurationMillis,int maximumPending,long maximumWaitMillis){}
 
     @Override public void onEnable(){
         try{
             getServer().getPluginManager().registerEvents(this,this);saveDefaultConfig();
-            RuntimeSettings settings=loadSettings(new File(getDataFolder(),"config.yml"));apply(settings);
+            RuntimeSettings settings=loadSettings(new File(getDataFolder(),"config.yml"));applyInitial(settings);
             store=new BanStore(getDataFolder().toPath().resolve("bans.db"));store.load();worker=new BoundedTasks(settings.maximumPending(),settings.maximumWaitMillis());
             register("tempban");register("unban");register("nordbans");
             Bukkit.getGlobalRegionScheduler().runAtFixedRate(this,ignored->tick(),20,1);
@@ -50,7 +51,7 @@ public final class NordBansPlugin extends JavaPlugin implements Listener,TabExec
         if(!ready||closing||reloadPending){sender.sendMessage(Component.text(reloadPending?"NordBans reload is already pending.":"NordBans is unavailable."));return true;}
         reloadPending=true;File file=new File(getDataFolder(),"config.yml");
         Bukkit.getAsyncScheduler().runNow(this,ignored->{RuntimeSettings next=null;Exception problem=null;try{next=loadSettings(file);}catch(Exception e){problem=e;}RuntimeSettings result=next;Exception error=problem;
-            Bukkit.getGlobalRegionScheduler().execute(this,()->{reloadPending=false;if(!ready||closing)return;if(error!=null){getLogger().warning("NordBans reload rejected; previous settings retained: "+error.getClass().getSimpleName());reply(sender,"messages.reload-failed");return;}apply(result);reply(sender,"messages.reload-success");});});
+            Bukkit.getGlobalRegionScheduler().execute(this,()->{reloadPending=false;if(!ready||closing)return;if(error!=null){getLogger().warning("NordBans reload rejected; previous settings retained: "+error.getClass().getSimpleName());reply(sender,"messages.reload-failed");return;}boolean restartRequired=result.maximumPending()!=storageMaximumPending||result.maximumWaitMillis()!=storageMaximumWaitMillis;apply(result);reply(sender,"messages.reload-success");if(restartRequired){getLogger().warning("Changes to storage.maximum-pending-operations and storage.maximum-queue-wait-millis require a normal server restart; the active storage worker was not replaced.");replyText(sender,"Storage queue limit changes require a normal server restart.");}});});
         sender.sendMessage(Component.text("NordBans reload queued."));return true;
     }
     private RuntimeSettings loadSettings(File file){
@@ -62,6 +63,7 @@ public final class NordBansPlugin extends JavaPlugin implements Listener,TabExec
         return new RuntimeSettings(Map.copyOf(templates),Duration.ofDays(days).toMillis(),pending,wait);
     }
     private void apply(RuntimeSettings settings){messages=settings.messages();maximumDurationMillis=settings.maximumDurationMillis();}
+    private void applyInitial(RuntimeSettings settings){apply(settings);storageMaximumPending=settings.maximumPending();storageMaximumWaitMillis=settings.maximumWaitMillis();}
     private boolean tempBan(CommandSender sender,String[] args){
         if(args.length<3){send(sender,"messages.tempban-usage");return true;}String name=args[0];if(!BanStore.validName(name)){send(sender,"messages.invalid-player");return true;}
         var duration=DurationParser.parse(args[1]);long millis,expires;try{millis=duration.orElseThrow().toMillis();expires=Math.addExact(System.currentTimeMillis(),millis);}catch(ArithmeticException|NoSuchElementException e){send(sender,"messages.invalid-duration");return true;}
@@ -81,6 +83,7 @@ public final class NordBansPlugin extends JavaPlugin implements Listener,TabExec
     @Override public List<String> onTabComplete(CommandSender sender,Command command,String alias,String[] args){if(command.getName().equalsIgnoreCase("nordbans"))return args.length==1&&sender.hasPermission("nordbans.admin")&&"reload".startsWith(args[0].toLowerCase(Locale.ROOT))?List.of("reload"):List.of();if(!ready||args.length!=1||!sender.hasPermission("nordbans."+command.getName().toLowerCase(Locale.ROOT)))return List.of();String prefix=args[0].toLowerCase(Locale.ROOT);Collection<String> names=command.getName().equalsIgnoreCase("unban")?store.activeNames():Bukkit.getOnlinePlayers().stream().map(Player::getName).toList();return names.stream().filter(n->n.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).limit(50).toList();}
     private void register(String name){PluginCommand command=Objects.requireNonNull(getCommand(name));command.setExecutor(this);command.setTabCompleter(this);}
     private void reply(CommandSender sender,String path,String... replacements){onOwner(sender,()->{if(sender instanceof Player p&&!p.isOnline())return;send(sender,path,replacements);});}
+    private void replyText(CommandSender sender,String text){onOwner(sender,()->{if(!(sender instanceof Player p)||p.isOnline())sender.sendMessage(Component.text(text));});}
     private void onOwner(CommandSender sender,Runnable action){if(!ready||closing)return;Runnable guarded=()->{if(ready&&!closing)action.run();};try{if(sender instanceof Player p)p.getScheduler().execute(this,guarded,null,1);else Bukkit.getGlobalRegionScheduler().execute(this,guarded);}catch(org.bukkit.plugin.IllegalPluginAccessException ignored){}}
     private void send(CommandSender sender,String path,String... replacements){String fallback=switch(path){case"messages.storage-busy"->"<red>Ban storage is busy; please retry.</red>";case"messages.storage-pending"->"<yellow>Ban update queued; wait for confirmation.</yellow>";case"messages.reload-success"->"<green>NordBans configuration reloaded.</green>";case"messages.reload-failed"->"<red>Reload rejected; previous settings retained.</red>";default->"<red>Ban storage update failed.</red>";};String raw=messages.getOrDefault(path,fallback);List<TagResolver> tags=new ArrayList<>();for(int i=0;i+1<replacements.length;i+=2){String key=replacements[i];tags.add(Placeholder.unparsed(key.substring(1,key.length()-1),replacements[i+1]));}sender.sendMessage(mini.deserialize(raw,tags.toArray(TagResolver[]::new)));}
 }
